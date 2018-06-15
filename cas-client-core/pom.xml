@@ -11,6 +11,7 @@
 	<packaging>jar</packaging>
 	<name>JA-SIG CAS Client for Java - Core</name>
 	<build>
+		<finalName>cas-client-core-unsecured-${project.version}</finalName>
 		<sourceDirectory>src/main/java</sourceDirectory>
 		<testSourceDirectory>src/test/java</testSourceDirectory>
 		<testResources>
