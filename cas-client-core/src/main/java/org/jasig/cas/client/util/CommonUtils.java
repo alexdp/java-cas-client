@@ -5,23 +5,41 @@
  */
 package org.jasig.cas.client.util;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.jasig.cas.client.proxy.ProxyGrantingTicketStorage;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.ServletRequest;
-
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
-import java.net.URLEncoder;
-import java.net.URL;
+import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.Collection;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.conn.ClientConnectionManager;
+import org.apache.http.conn.scheme.PlainSocketFactory;
+import org.apache.http.conn.scheme.Scheme;
+import org.apache.http.conn.scheme.SchemeRegistry;
+import org.apache.http.conn.ssl.SSLSocketFactory;
+import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.conn.SingleClientConnManager;
+import org.apache.http.params.BasicHttpParams;
+import org.apache.http.params.HttpParams;
+import org.apache.http.util.EntityUtils;
+import org.jasig.cas.client.proxy.ProxyGrantingTicketStorage;
 
 /**
  * Common utilities so that we don't need to include Commons Lang.
@@ -274,22 +292,16 @@ public final class CommonUtils {
      * @return the response.
      */
     public static String getResponseFromServer(final URL constructedUrl) {
+    	
+    	
         HttpURLConnection conn = null;
         try {
-            conn = (HttpURLConnection) constructedUrl.openConnection();
-
-            final BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-
-            String line;
-            final StringBuffer stringBuffer = new StringBuffer(255);
-
-            synchronized (stringBuffer) {
-                while ((line = in.readLine()) != null) {
-                    stringBuffer.append(line);
-                    stringBuffer.append("\n");
-                }
-                return stringBuffer.toString();
-            }
+        	HttpClient httpClient = getTrustEveryoneSslHttpClient();
+        	HttpGet httpGet = new HttpGet(constructedUrl.toURI());
+        	HttpResponse response = httpClient.execute(httpGet);
+        	HttpEntity entity = response.getEntity();
+        	String responseString = EntityUtils.toString(entity, "UTF-8");
+        	return responseString;
         } catch (final Exception e) {
             LOG.error(e.getMessage(), e);
             throw new RuntimeException(e);
@@ -314,4 +326,40 @@ public final class CommonUtils {
             throw new IllegalArgumentException(e);
         }
     }
+    
+    
+    private static HttpClient getTrustEveryoneSslHttpClient() throws Exception {
+    	SSLContext sslContext = SSLContext.getInstance("SSL");
+
+    	// set up a TrustManager that trusts everything
+    	sslContext.init(null, new TrustManager[] { new X509TrustManager() {
+    	            public X509Certificate[] getAcceptedIssuers() {
+    	                    System.out.println("getAcceptedIssuers =============");
+    	                    return null;
+    	            }
+
+    	            public void checkClientTrusted(X509Certificate[] certs,
+    	                            String authType) {
+    	                    System.out.println("checkClientTrusted =============");
+    	            }
+
+    	            public void checkServerTrusted(X509Certificate[] certs,
+    	                            String authType) {
+    	                    System.out.println("checkServerTrusted =============");
+    	            }
+    	} }, new SecureRandom());
+
+    	SSLSocketFactory sf = new SSLSocketFactory(sslContext);
+    	SchemeRegistry schemeRegistry = new SchemeRegistry();
+    	schemeRegistry.register(new Scheme("https", sf, 443));
+    	schemeRegistry.register(new Scheme("http", PlainSocketFactory.getSocketFactory(), 80)); 
+        
+
+    	// apache HttpClient version >4.2 should use BasicClientConnectionManager
+    	HttpParams params = new BasicHttpParams();
+    	ClientConnectionManager cm = new SingleClientConnManager(params, schemeRegistry);
+    	HttpClient httpClient = new DefaultHttpClient(cm, params);
+    	return httpClient;
+    }
+    
 }
